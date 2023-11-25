@@ -181,7 +181,8 @@ func searchLivestreamsHandler(c echo.Context) error {
 	defer tx.Rollback()
 
 	var livestreamModels []*LivestreamModel
-	if c.QueryParam("tag") != "" {
+	// if c.QueryParam("tag") != "" { // changed
+	if keyTagName != "" {
 		// タグによる取得
 		var tagIDList []int
 		if err := tx.SelectContext(ctx, &tagIDList, "SELECT id FROM tags WHERE name = ?", keyTagName); err != nil {

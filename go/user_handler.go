@@ -104,6 +104,18 @@ func getIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
+	// アイコン画像配信で304を返せる可能性（ISUPipeマニュアル参照）
+	// https://github.com/labstack/echo/discussions/1782
+	if match := c.Request().Header.Get("If-None-Match"); match != "" {
+		var hash string
+		if err := tx.GetContext(ctx, &hash, "SELECT image_hash FROM icons WHERE user_id = ?", user.ID); err == nil {
+			if match == hash {
+				return c.NoContent(http.StatusNotModified)
+			}
+		}
+		// フォールバックはせず、通常の処理をする
+	}
+
 	var image []byte
 	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -144,7 +156,9 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
 	}
 
-	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
+	// ここでimageのハッシュも登録する
+	imageHash := fmt.Sprintf("%x", sha256.Sum256(req.Image))
+	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image, image_hash) VALUES (?, ?, ?)", userID, req.Image, imageHash)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
 	}
@@ -414,7 +428,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			return User{}, err
 		}
 	}
-	iconHash := sha256.Sum256(image)
+	iconHash := sha256.Sum256(image) // ハッシュ作成、返却
 
 	user := User{
 		ID:          userModel.ID,
